@@ -1,7 +1,16 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+// Validate environment variables
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing Supabase environment variables. Please check your .env.local file.')
+}
+
+if (supabaseUrl.includes('your-project-ref') || supabaseAnonKey.includes('your-anon-key')) {
+  throw new Error('Please replace the placeholder values in your .env.local file with actual Supabase credentials.')
+}
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
