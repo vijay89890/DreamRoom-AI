@@ -10,13 +10,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Separator } from '@/components/ui/separator'
 import { useRouter } from 'next/navigation'
 import { useToast } from '@/hooks/use-toast'
+import { signIn } from '@/lib/supabase'
 import Link from 'next/link'
 
 export default function SignInPage() {
   const router = useRouter()
   const { toast } = useToast()
-  
-  console.log('Sign-in page rendered')
   
   const [showPassword, setShowPassword] = useState(false)
   const [email, setEmail] = useState('')
@@ -26,30 +25,27 @@ export default function SignInPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
-    console.log('Sign-in attempt:', { email })
     
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500))
+      const { data, error } = await signIn(email, password)
       
-      // For demo purposes, accept any email/password combination
-      if (email && password) {
-        console.log('Sign-in successful')
+      if (error) {
+        throw error
+      }
+      
+      if (data.user) {
         toast({
           title: "Welcome back!",
           description: "You have been signed in successfully.",
         })
         
-        // Redirect to dashboard
         router.push('/dashboard')
-      } else {
-        throw new Error('Please fill in all fields')
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Sign-in error:', error)
       toast({
         title: "Sign-in failed",
-        description: "Please check your credentials and try again.",
+        description: error.message || "Please check your credentials and try again.",
         variant: "destructive",
       })
     } finally {
@@ -70,7 +66,7 @@ export default function SignInPage() {
               <div className="flex justify-center mb-4">
                 <div className="flex items-center space-x-2">
                   <Sparkles className="h-8 w-8 text-purple-400" />
-                  <span className="text-2xl font-bold text-white" data-macaly="signin-logo">DreamRoom AI</span>
+                  <span className="text-2xl font-bold text-white">DreamRoom AI</span>
                 </div>
               </div>
               <CardTitle className="text-2xl text-white">Welcome Back</CardTitle>
@@ -112,15 +108,6 @@ export default function SignInPage() {
                       {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
-                </div>
-                <div className="flex items-center justify-between">
-                  <label className="flex items-center space-x-2 text-sm text-gray-400">
-                    <input type="checkbox" className="rounded border-slate-600" />
-                    <span>Remember me</span>
-                  </label>
-                  <Link href="/auth/forgot-password" className="text-sm text-purple-400 hover:text-purple-300">
-                    Forgot password?
-                  </Link>
                 </div>
                 <Button
                   type="submit"

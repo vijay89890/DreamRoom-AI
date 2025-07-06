@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Upload, Image, CheckCircle, AlertCircle, Sparkles, ArrowRight, Camera } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -12,12 +12,14 @@ import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
 import { useRouter } from 'next/navigation'
 import { useToast } from '@/hooks/use-toast'
+import { useAuth } from '@/lib/auth-context'
+import { uploadImage, createDesign } from '@/lib/supabase'
+import { generateRoom3D, generateRoomDescription } from '@/lib/ai-services'
 
 export default function UploadPage() {
   const router = useRouter()
   const { toast } = useToast()
-  
-  console.log('Upload page rendered')
+  const { user, loading: authLoading } = useAuth()
   
   const [dragActive, setDragActive] = useState(false)
   const [files, setFiles] = useState<File[]>([])
@@ -29,6 +31,12 @@ export default function UploadPage() {
   const [roomType, setRoomType] = useState('living_room')
   const [uploadComplete, setUploadComplete] = useState(false)
   const [generatedDesignId, setGeneratedDesignId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/auth/signin')
+    }
+  }, [user, authLoading, router])
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -51,7 +59,6 @@ export default function UploadPage() {
     
     if (droppedFiles.length > 0) {
       setFiles(droppedFiles)
-      console.log('Files dropped:', droppedFiles.map(f => f.name))
     }
   }, [])
 
@@ -62,11 +69,26 @@ export default function UploadPage() {
     
     if (selectedFiles.length > 0) {
       setFiles(selectedFiles)
-      console.log('Files selected:', selectedFiles.map(f => f.name))
     }
   }
 
+  const generateSlug = (title: string) => {
+    return title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '')
+  }
+
   const handleUpload = async () => {
+    if (!user) {
+      toast({
+        title: "Authentication required",
+        description: "Please sign in to upload your room.",
+        variant: "destructive",
+      })
+      return
+    }
+
     if (files.length === 0) {
       toast({
         title: "No file selected",
@@ -79,64 +101,88 @@ export default function UploadPage() {
     setUploading(true)
     setProgress(0)
     
-    console.log('Starting upload process')
-    
     try {
-      // Simulate file upload progress
+      const file = files[0]
+      const fileName = `${user.id}/${Date.now()}-${file.name}`
+      
+      // Upload image to Supabase Storage
       for (let i = 0; i <= 100; i += 10) {
         await new Promise(resolve => setTimeout(resolve, 100))
         setProgress(i)
+      }
+      
+      const { data: uploadData, error: uploadError } = await uploadImage(
+        file,
+        'room-images',
+        fileName
+      )
+      
+      if (uploadError) {
+        throw uploadError
       }
       
       setUploading(false)
       setProcessing(true)
       setProgress(0)
       
-      console.log('Processing room image with AI')
-      
-      // Create form data
-      const formData = new FormData()
-      formData.append('file', files[0])
-      formData.append('roomTitle', roomTitle || 'My Room Design')
-      formData.append('roomType', roomType)
-      formData.append('roomDescription', roomDescription)
-      
-      // Call upload API
-      const response = await fetch('/api/upload-room', {
-        method: 'POST',
-        body: formData,
-      })
-      
-      if (!response.ok) {
-        throw new Error('Upload failed')
+      // Generate AI description if not provided
+      let finalDescription = roomDescription
+      if (!finalDescription) {
+        finalDescription = await generateRoomDescription(uploadData.publicUrl)
       }
       
-      const data = await response.json()
-      
-      // Simulate AI processing progress
+      // Generate 3D model (mock for now)
       for (let i = 0; i <= 100; i += 5) {
         await new Promise(resolve => setTimeout(resolve, 150))
         setProgress(i)
       }
       
-      setGeneratedDesignId(data.designId)
+      const { modelUrl, thumbnailUrl } = await generateRoom3D(uploadData.publicUrl)
+      
+      // Create design record
+      const designTitle = roomTitle || 'My Room Design'
+      const designSlug = `${generateSlug(designTitle)}-${Date.now()}`
+      
+      const { data: designData, error: designError } = await createDesign({
+        user_id: user.id,
+        slug: designSlug,
+        title: designTitle,
+        description: finalDescription,
+        room_type: roomType,
+        design_state: {
+          originalImage: uploadData.publicUrl,
+          modelUrl,
+          furniture: [],
+          walls: { color: '#ffffff' },
+          lighting: { brightness: 70, temperature: 'warm' },
+          camera: { position: { x: 5, y: 2, z: 5 }, rotation: { x: 0, y: 0, z: 0 } }
+        },
+        image_url: uploadData.publicUrl,
+        thumbnail_url: thumbnailUrl,
+        tags: [roomType, 'ai-generated'],
+        is_public: false,
+      })
+      
+      if (designError) {
+        throw designError
+      }
+      
+      setGeneratedDesignId(designData.id)
       setProcessing(false)
       setUploadComplete(true)
-      
-      console.log('Upload and processing complete, design ID:', data.designId)
       
       toast({
         title: "Room uploaded successfully!",
         description: "Your room has been transformed into a 3D environment.",
       })
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Upload error:', error)
       setUploading(false)
       setProcessing(false)
       toast({
         title: "Upload failed",
-        description: "There was an error processing your room photo. Please try again.",
+        description: error.message || "There was an error processing your room photo. Please try again.",
         variant: "destructive",
       })
     }
@@ -160,6 +206,18 @@ export default function UploadPage() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-purple-400"></div>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return null
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
       {/* Header */}
@@ -168,10 +226,10 @@ export default function UploadPage() {
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2">
               <Sparkles className="h-8 w-8 text-purple-400" />
-              <span className="text-2xl font-bold text-white" data-macaly="upload-logo">DreamRoom AI</span>
+              <span className="text-2xl font-bold text-white">DreamRoom AI</span>
             </div>
             <span className="text-gray-400">/</span>
-            <h1 className="text-xl font-semibold text-white" data-macaly="upload-title">
+            <h1 className="text-xl font-semibold text-white">
               Upload Room Photo
             </h1>
           </div>
@@ -409,10 +467,10 @@ export default function UploadPage() {
                   </div>
                   
                   <div>
-                    <h2 className="text-3xl font-bold text-white mb-4" data-macaly="success-title">
+                    <h2 className="text-3xl font-bold text-white mb-4">
                       Room Transformation Complete!
                     </h2>
-                    <p className="text-gray-400 text-lg max-w-2xl mx-auto" data-macaly="success-description">
+                    <p className="text-gray-400 text-lg max-w-2xl mx-auto">
                       Your room has been successfully converted into a 3D environment. 
                       Start designing with our AI assistant now!
                     </p>

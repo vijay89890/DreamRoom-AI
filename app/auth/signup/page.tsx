@@ -11,13 +11,12 @@ import { Separator } from '@/components/ui/separator'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useRouter } from 'next/navigation'
 import { useToast } from '@/hooks/use-toast'
+import { signUp } from '@/lib/supabase'
 import Link from 'next/link'
 
 export default function SignUpPage() {
   const router = useRouter()
   const { toast } = useToast()
-  
-  console.log('Sign-up page rendered')
   
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
@@ -37,7 +36,6 @@ export default function SignUpPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
-    console.log('Sign-up attempt:', { name: formData.name, email: formData.email })
     
     try {
       // Validate form
@@ -57,23 +55,26 @@ export default function SignUpPage() {
         throw new Error('Password must be at least 6 characters long')
       }
       
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500))
+      const { data, error } = await signUp(formData.email, formData.password, formData.name)
       
-      console.log('Sign-up successful')
-      toast({
-        title: "Account created successfully!",
-        description: "Welcome to DreamRoom AI. You can now start creating amazing designs.",
-      })
+      if (error) {
+        throw error
+      }
       
-      // Redirect to upload page to start their journey
-      router.push('/upload')
+      if (data.user) {
+        toast({
+          title: "Account created successfully!",
+          description: "Welcome to DreamRoom AI. You can now start creating amazing designs.",
+        })
+        
+        router.push('/dashboard')
+      }
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Sign-up error:', error)
       toast({
         title: "Sign-up failed",
-        description: error instanceof Error ? error.message : "Please check your information and try again.",
+        description: error.message || "Please check your information and try again.",
         variant: "destructive",
       })
     } finally {
@@ -94,7 +95,7 @@ export default function SignUpPage() {
               <div className="flex justify-center mb-4">
                 <div className="flex items-center space-x-2">
                   <Sparkles className="h-8 w-8 text-purple-400" />
-                  <span className="text-2xl font-bold text-white" data-macaly="signup-logo">DreamRoom AI</span>
+                  <span className="text-2xl font-bold text-white">DreamRoom AI</span>
                 </div>
               </div>
               <CardTitle className="text-2xl text-white">Create Your Account</CardTitle>
